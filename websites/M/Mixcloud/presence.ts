@@ -1,71 +1,69 @@
-import { Assets } from 'premid'
+import { Assets /* , Presence */ } from 'premid'
+// import type { PresenceData } from 'premid' // ถ้าแพ็กเกจมี type นี้
 
-const presence = new Presence({
-  clientId: '610102236374368267',
-})
-const strings = presence.getStrings({
+const presence = new Presence({ clientId: '610102236374368267' })
+const stringsPromise = presence.getStrings({
   play: 'general.playing',
   pause: 'general.paused',
   live: 'general.live',
 })
 
-let author: string | null | undefined,
-  title: string | null | undefined,
-  url: string | null | undefined,
-  openUrlText: string | null | undefined
-
 presence.on('UpdateData', async () => {
-  if (document.querySelector('[class^=\'PlayerControls__PlayerContainer\']')) {
-    const normalIsPlaying: boolean = document
-      .querySelector('div[class^=\'PlayButton__PlayerControl\']')
-      ?.getAttribute('aria-label') === 'Pause'
-    const liveIsPlaying: boolean = document
-      .querySelector(
-        '[class^=LiveVideo__VideoContainer] .shaka-play-button',
-      )
-      ?.getAttribute('icon') === 'pause'
-    const isPlaying = normalIsPlaying || liveIsPlaying
-
-    if (normalIsPlaying) {
-      const normalDetails = document.querySelector(
-        '[class^=\'shared__ShowDetails\'] > a:nth-child(1)',
-      )
-
-      title = normalDetails?.textContent
-      url = new URL(normalDetails?.getAttribute('href') ?? '', window.location.origin)
-        .href
-      openUrlText = 'Listen to Show'
-      author = document.querySelector(
-        '[class^=\'PlayerControls__ShowOwnerName\']',
-      )?.textContent
-    }
-    else if (liveIsPlaying) {
-      url = window.location.href
-      openUrlText = 'View Livestream'
-      title = document.querySelector(
-        '[class^=\'LiveStreamDetails__StreamTitleContainer\'] > h4',
-      )?.textContent
-      author = document.querySelector(
-        '[class^=\'LiveStreamStreamerDetails__StreamerDetailsTextContainer\'] h4',
-      )?.textContent
-    }
-
-    const presenceData: PresenceData = {
-      details: title,
-      state: author,
-      largeImageKey: 'https://cdn.rcd.gg/PreMiD/websites/M/Mixcloud/assets/logo.png',
-      smallImageKey: isPlaying ? Assets.Play : Assets.Pause,
-      smallImageText: isPlaying ? (await strings).play : (await strings).pause,
-      buttons: [{ label: openUrlText ?? '', url: url ?? '' }],
-    }
-
-    if (liveIsPlaying) {
-      presenceData.smallImageKey = Assets.Live
-      presenceData.smallImageText = (await strings).live
-    }
-
-    if (isPlaying)
-      presence.setActivity(presenceData)
-    else presence.setActivity()
+  const hasPlayer = document.querySelector("[class^='PlayerControls__PlayerContainer']")
+  if (!hasPlayer) {
+    presence.setActivity() // clear
+    return
   }
+
+  const normalIsPlaying =
+    document.querySelector("div[class^='PlayButton__PlayerControl']")?.getAttribute('aria-label') === 'Pause'
+  const liveIsPlaying =
+    document.querySelector("[class^=LiveVideo__VideoContainer] .shaka-play-button")?.getAttribute('icon') === 'pause'
+  const isPlaying = !!(normalIsPlaying || liveIsPlaying)
+
+  let author: string | null = null
+  let title: string | null = null
+  let url: string | null = null
+  let openUrlText: string | null = null
+
+  if (normalIsPlaying) {
+    const normalDetails = document.querySelector("[class^='shared__ShowDetails'] > a:nth-child(1)")
+    const href = normalDetails?.getAttribute('href') ?? undefined
+    title = normalDetails?.textContent?.trim() ?? null
+    url = href ? new URL(href, window.location.origin).href : null
+    openUrlText = 'Listen to Show'
+    author = document.querySelector("[class^='PlayerControls__ShowOwnerName']")?.textContent?.trim() ?? null
+  } else if (liveIsPlaying) {
+    url = window.location.href
+    openUrlText = 'View Livestream'
+    title = document
+      .querySelector("[class^='LiveStreamDetails__StreamTitleContainer'] > h4")
+      ?.textContent?.trim() ?? null
+    author = document
+      .querySelector("[class^='LiveStreamStreamerDetails__StreamerDetailsTextContainer'] h4")
+      ?.textContent?.trim() ?? null
+  }
+
+  if (!isPlaying || !title) {
+    presence.setActivity() // ไม่เล่น/ไม่มี title ก็เคลียร์
+    return
+  }
+
+  const s = await stringsPromise
+
+  // ใส่ปุ่มเฉพาะเมื่อครบทั้ง label และ url
+  const buttons =
+    openUrlText && url ? [{ label: openUrlText, url }] : undefined
+
+  const presenceData /* : PresenceData */ = {
+    details: title,
+    state: author ?? undefined,
+    // แนะนำใช้ asset key ที่อัปโหลดไว้ใน Discord app ของคุณ
+    largeImageKey: 'mixcloud_logo',
+    smallImageKey: liveIsPlaying ? Assets.Live : (Assets.Play),
+    smallImageText: liveIsPlaying ? s.live : s.play,
+    ...(buttons ? { buttons } : {}),
+  }
+
+  presence.setActivity(presenceData)
 })
